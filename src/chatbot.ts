@@ -170,33 +170,37 @@ export class ChatBot {
         });
   }
 
-  private async ask(sessionId: string, username: string, text: string, replyCallback: (responseData: ResponseData) => Promise<void>) {
-    const askUrl = `${Config.chatbotProxy}/v2/chat`;
-    const requestBody: RequestBody = {
-      message: text,
-      session_id: sessionId,
-      username: username,
-    };
-    const chatbot = this;
-    Logger.log(`🎯 Chatbot triggered: ${askUrl}`);
-    await postData(askUrl, requestBody)
-        .then((requestId: string) => {
-          Logger.log(`🎯 Got request id: ${requestId}`)
-          let intervalCnt = 0;
-          const intervalId = setInterval(
-              async function () {
-                // @ts-ignore
-                await chatbot.askResponse(requestId, replyCallback, intervalId)
-                if (++intervalCnt >= 60){
-                  clearInterval(intervalId);
-                  replyCallback(ChatBot.constructResponseData(Constants.responseStatus.failed, "响应超时，请重新尝试！"));
-                }
-              }, 2000);
-        }).catch((error) => {
-          replyCallback(ChatBot.constructResponseData(Constants.responseStatus.failed, this.errorResponse));
-          Logger.error(error);
-        });
-  }
+private async ask(sessionId: string, username: string, text: string, replyCallback: (responseData: ResponseData) => Promise<void>) {
+  const askUrl = `${Config.chatbotProxy}/v2/chat`;
+  const requestBody: RequestBody = {
+    message: text,
+    session_id: sessionId,
+    username: username,
+  };
+  const chatbot = this;
+  Logger.log(`🎯 Chatbot triggered: ${askUrl}`);
+  await postData(askUrl, requestBody)
+    .then((requestId: string) => {
+      Logger.log(`🎯 Got request id: ${requestId}`);
+      const timeoutId = setTimeout(async () => {
+        clearInterval(intervalId);
+        replyCallback(ChatBot.constructResponseData(Constants.responseStatus.failed, "响应超时，请重新尝试！"));
+      }, 60000); // 设置超时时间，单位为毫秒
+
+      const intervalId = setInterval(async () => {
+        clearInterval(timeoutId); // 清除超时的 timeout
+        await chatbot.askResponse(requestId, replyCallback, intervalId);
+        clearInterval(intervalId);
+        // 如果需要重试，可以添加以下重试逻辑
+        // Logger.log('🎯 Request timed out. Retrying...');
+        // chatbot.ask(sessionId, username, text, replyCallback);
+      }, 2000);
+    })
+    .catch((error) => {
+      replyCallback(ChatBot.constructResponseData(Constants.responseStatus.failed, this.errorResponse));
+      Logger.error(error);
+    });
+}
 
   private async replyText(
       talker: RoomInterface | ContactInterface,
